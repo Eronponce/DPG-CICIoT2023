@@ -2,7 +2,7 @@ import subprocess
 import os
 
 # Caminho para o dataset
-dataset_path = "Merged01_cleaned.csv"
+dataset_path = "Merged01.csv"
 
 # Caminho do diretório onde está o script `dpg_custom.py`
 script_dir = os.path.abspath("DPG-main/DPG-main")

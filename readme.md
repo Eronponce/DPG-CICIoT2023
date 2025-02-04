@@ -2,4 +2,5 @@ O repositório apresenta uma modificação do código para realizar a execução
 
 - A base inicial foi limpa, removendo 11 valores inf, e removido 12 valores ausentes
 - Faça o download do requirements.txt
+- Execute o setup.py para baixar a base de dados
 - Execute o main.py

@@ -19,3 +19,4 @@ six==1.16.0
 threadpoolctl==3.5.0
 tzdata==2024.1
 neptune==1.13.0
+gdown
