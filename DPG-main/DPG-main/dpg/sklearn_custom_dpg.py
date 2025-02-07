@@ -12,43 +12,43 @@ from .core import digraph_to_nx, get_dpg, get_dpg_node_metrics, get_dpg_metrics
 from .visualizer import plot_dpg
 
 
-def select_custom_dataset(path, target_column):
+def select_custom_dataset(path, target_column, perc_dataset=1.0, random_state=42):
     """
-    Loads a custom dataset from a CSV file, separates the target column, and prepares the data for modeling.
+    Loads a custom dataset from a CSV file, optionally samples a percentage, 
+    separates the target column, and prepares the data for modeling.
 
     Args:
-    path: The file path to the CSV dataset.
-    target_column: The name of the column to be used as the target variable.
+        path (str): File path to the CSV dataset.
+        target_column (str): Name of the target variable column.
+        perc_dataset (float, optional): Fraction of dataset to use (default is 1.0 for full dataset).
+        random_state (int, optional): Random seed for reproducibility.
 
     Returns:
-    data: A numpy array containing the feature data.
-    features: A numpy array containing the feature names.
-    target: A numpy array containing the target variable.
+        tuple: (data, features, target)
+            - data (numpy.ndarray): Feature data.
+            - features (numpy.ndarray): Feature names.
+            - target (numpy.ndarray): Target variable.
     """
-    # Load the dataset from the specified CSV file
+    
+    # Load dataset
     df = pd.read_csv(path, sep=',')
     
-    # Extract the target variable
-    target = np.array(df[target_column])
+    # Sample a percentage of the dataset (if less than 100%)
+    if perc_dataset < 1.0:
+        df = df.sample(frac=perc_dataset, random_state=random_state).reset_index(drop=True)
     
-    # Remove the target column from the dataframe
-    df.drop(columns=[target_column], inplace=True)
+    # Extract target variable
+    target = df.pop(target_column).values  # Removes target column and converts to NumPy array
     
-    # Convert the feature data to a numpy array
-    data = []
-    for index, row in df.iterrows():
-        data.append([row[j] for j in df.columns])
-    data = np.array(data)
-    
-    # Extract feature names
-    features = np.array([i for i in df.columns])
+    # Extract feature data and feature names
+    data = df.values  # Converts remaining dataframe to numpy array efficiently
+    features = df.columns.to_numpy()  # Extracts feature names directly
 
-    # Return the feature data, feature names, and target variable
     return data, features, target
 
 
 
-def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_threshold, model_name='RandomForestClassifier', file_name=None, plot=False, save_plot_dir="examples/", attribute=None, communities=False, class_flag=False):
+def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_threshold, model_name='RandomForestClassifier', file_name=None, plot=False, save_plot_dir="examples/", attribute=None, communities=False, class_flag=False, n_jobs=-1, perc_dataset=1.0):
     """
     Trains a Random Forest classifier on a selected dataset, evaluates its performance, and optionally plots the DPG.
 
@@ -78,7 +78,7 @@ def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_thr
     if save_plot_dir and not os.path.exists(save_plot_dir):
         os.makedirs(save_plot_dir)
     # Load dataset
-    data, features, target = select_custom_dataset(datasets, target_column=target_column)
+    data, features, target = select_custom_dataset(datasets, target_column=target_column, perc_dataset=perc_dataset)
     
     # Split dataset into training and test sets
     X_train, X_test, y_train, y_test = train_test_split(
@@ -139,7 +139,7 @@ def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_thr
 
 
     # Extract DPG
-    dot = get_dpg(X_train, features, model, perc_var, decimal_threshold)
+    dot = get_dpg(X_train, features, model, perc_var, decimal_threshold, n_jobs=n_jobs)
     
     # Convert Graphviz Digraph to NetworkX DiGraph  
     dpg_model, nodes_list = digraph_to_nx(dot)
