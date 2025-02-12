@@ -31,6 +31,18 @@ def plot_dpg(plot_name, dot, df, df_dpg, save_dir="examples/", attribute=None, c
     Returns:
     None
     """
+    # Se attribute for inválido, definir um atributo padrão
+    if attribute is None or attribute not in df.columns:
+        print("Atributo inválido! Usando 'Degree' como padrão.")
+        attribute = "Degree"  # Usa 'Degree' como fallback
+
+    # Certificar-se de que o atributo existe antes de calcular max_score
+    if attribute in df.columns:
+        max_score = df[attribute].max()
+        norm = mcolors.Normalize(0, max_score)
+    else:
+        raise KeyError(f"Erro: O atributo '{attribute}' não foi encontrado no DataFrame. Colunas disponíveis: {df.columns.tolist()}")
+
     print("Plotting DPG...")
     # Basic color scheme if no attribute or communities are specified
     if attribute is None and not communities:
@@ -54,7 +66,12 @@ def plot_dpg(plot_name, dot, df, df_dpg, save_dir="examples/", attribute=None, c
             df = df[~df.Label.str.contains('Class')].reset_index(drop=True)  # Exclude class nodes from further processing
         
         # Normalize the attribute values if norm_flag is True
-        max_score = df[attribute].max()
+        if attribute is None:
+            print("Nenhum atributo foi especificado. Pulando a coloração dos nós.")
+            attribute = "Degree"  # Defina um atributo padrão se necessário
+        elif attribute not in df.columns:
+            raise KeyError(f"Erro: O atributo '{attribute}' não foi encontrado no DataFrame. Colunas disponíveis: {df.columns}")
+
         norm = mcolors.Normalize(0, max_score)
         colors = colormap(norm(df[attribute]))  # Assign colors based on normalized scores
         
