@@ -569,6 +569,62 @@ def get_dpg_metrics(dpg_model, nodes_list):
 
     return data
 
+def get_dpg_metrics_to_csv(dpg_model, nodes_list, community_file="examples/dpg_communities.csv", bounds_file="examples/dpg_class_bounds.csv"):
+    """
+    Extracts metrics from a DPG and saves the results to separate CSV files for communities and class bounds.
+
+    Args:
+    dpg_model: A NetworkX graph representing the directed process graph.
+    nodes_list: A list of nodes where each node is a tuple. The first element is the node identifier and the second is the node label.
+    community_file: The name of the CSV file to save community data.
+    bounds_file: The name of the CSV file to save class bounds.
+    """
+    # Set the random seed for reproducibility
+    np.random.seed(42)
+
+    print("Calculating metrics...")
+    # Create a dictionary to map node labels to their identifiers
+    diz_nodes = {node[1] if "->" not in node[0] else None: node[0] for node in nodes_list}
+    diz_nodes = {k: v for k, v in diz_nodes.items() if k is not None}
+    diz_nodes_reversed = {v: k for k, v in diz_nodes.items()}
+    
+    # Extract asynchronous label propagation communities
+    asyn_lpa_communities = nx.community.asyn_lpa_communities(dpg_model, weight='weight')
+    asyn_lpa_communities_stack = [{diz_nodes_reversed[str(node)] for node in community} for community in asyn_lpa_communities]
+
+    filtered_nodes = {k: v for k, v in diz_nodes.items() if 'Class' in k or 'Pred' in k}
+    predecessors = {k: [] for k in filtered_nodes}
+    for key_1, value_1 in filtered_nodes.items():
+        try:
+            preds = nx.single_source_shortest_path(dpg_model.reverse(), value_1)
+            predecessors[key_1] = [k for k, v in diz_nodes.items() if v in preds and k != key_1]
+        except nx.NetworkXNoPath:
+            continue    
+
+    print("Calculating constraints...")
+    class_bounds = calculate_boundaries(predecessors)
+
+    # Save community data
+    community_data = []
+    for i, community in enumerate(asyn_lpa_communities_stack):
+        for node in community:
+            community_data.append([f"Community_{i+1}", node])
+    
+    df_communities = pd.DataFrame(community_data, columns=["Community", "Node"])
+    df_communities.to_csv(community_file, index=False)
+    print(f"DPG communities saved to {community_file}")
+    
+    # Save class bounds data
+    bounds_data = []
+    for key, bounds in class_bounds.items():
+        for constraint in bounds:
+            bounds_data.append([key, constraint])
+    
+    df_bounds = pd.DataFrame(bounds_data, columns=["Class", "Constraint"])
+    df_bounds.to_csv(bounds_file, index=False)
+    print(f"DPG class bounds saved to {bounds_file}")
+    
+    return df_communities, df_bounds
 
 
 def get_dpg_node_metrics(dpg_model, nodes_list):

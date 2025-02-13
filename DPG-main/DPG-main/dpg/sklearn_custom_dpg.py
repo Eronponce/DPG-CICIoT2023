@@ -8,7 +8,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.model_selection import train_test_split
 from sklearn.base import is_classifier, is_regressor
 
-from .core import digraph_to_nx, get_dpg, get_dpg_node_metrics, get_dpg_metrics
+from .core import digraph_to_nx, get_dpg, get_dpg_node_metrics, get_dpg_metrics, get_dpg_metrics_to_csv
 from .visualizer import plot_dpg
 
 
@@ -151,7 +151,7 @@ def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_thr
     # Get metrics from the DPG
     df_dpg = get_dpg_metrics(dpg_model, nodes_list)
     df = get_dpg_node_metrics(dpg_model, nodes_list)
-    
+    get_dpg_metrics_to_csv(dpg_model, nodes_list)
     # Plot the DPG if requested
     if plot:
         plot_name = (
