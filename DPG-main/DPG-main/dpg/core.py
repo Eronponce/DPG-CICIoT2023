@@ -478,7 +478,25 @@ def calculate_boundaries_2(class_dict):
 
     return boundaries_class
 
-def calculate_class_boundaries(key, nodes):
+def calculate_class_boundaries(key, nodes, class_names):
+    """
+    Calcula os limites de cada feature para uma classe específica e substitui o nome genérico por um nome real.
+
+    Args:
+    key: Nome da classe original (ex: 'Class 0').
+    nodes: Lista de predecessores dessa classe.
+    class_names: Lista com os nomes reais das classes, onde class_names[i] corresponde a 'Class i'.
+
+    Returns:
+    (class_name, boundaries): Tupla onde class_name é o nome real e boundaries são as condições associadas.
+    """
+    # Se a chave for uma classe ('Class X'), troca pelo nome real
+    if key.startswith("Class"):
+        class_index = int(key.split(" ")[1])  # Pega o número da classe
+        class_name = class_names[class_index]  # Substitui pelo nome real
+    else:
+        class_name = key  # Se não for uma classe, mantém o nome original
+
     feature_bounds = {}
     boundaries = []
 
@@ -491,10 +509,10 @@ def calculate_class_boundaries(key, nodes):
         if feature not in feature_bounds:
             feature_bounds[feature] = [math.inf, -math.inf]
 
-        if condition:  # '>' condition
+        if condition:  # Condição '>'
             if value < feature_bounds[feature][0]:
                 feature_bounds[feature][0] = value
-        else:  # '<=' condition
+        else:  # Condição '<='
             if value > feature_bounds[feature][1]:
                 feature_bounds[feature][1] = value
 
@@ -507,61 +525,74 @@ def calculate_class_boundaries(key, nodes):
             boundary = f"{min_greater} < {feature} <= {max_lessequal}"
         boundaries.append(boundary)
 
-    return key, boundaries
+    return class_name, boundaries  # Retorna a classe já com nome real
 
-def calculate_boundaries(class_dict):
-    # Using joblib's Parallel and delayed
-    results = Parallel(n_jobs=-1)(delayed(calculate_class_boundaries)(key, nodes) for key, nodes in class_dict.items())
-    boundaries_class = dict(results)
+
+def calculate_boundaries(class_dict, class_names):
+    """
+    Calcula os limites de cada feature para todas as classes, chamando calculate_class_boundaries em paralelo.
+
+    Args:
+    class_dict: Dicionário onde as chaves são classes ('Class 0', 'Class 1') e os valores são listas de predecessores.
+    class_names: Lista com os nomes reais das classes.
+
+    Returns:
+    boundaries_class: Dicionário com os limites para cada classe usando os nomes reais.
+    """
+    results = Parallel(n_jobs=-1)(
+        delayed(calculate_class_boundaries)(key, nodes, class_names) for key, nodes in class_dict.items()
+    )
+    boundaries_class = dict(results)  # Converte a lista de tuplas para dicionário
     return boundaries_class
 
 
 
 
-def get_dpg_metrics(dpg_model, nodes_list):
+
+def get_dpg_metrics(dpg_model, nodes_list, model):
     """
-    Extracts metrics from a DPG.
+    Extrai métricas do DPG, incluindo comunidades e limites das classes, com nomes reais.
 
     Args:
-    dpg_model: A NetworkX graph representing the directed process graph.
-    nodes_list: A list of nodes where each node is a tuple. The first element is the node identifier and the second is the node label.
+    dpg_model: Grafo NetworkX representando o DPG.
+    nodes_list: Lista de nós com identificadores e descrições.
+    model: Modelo de ensemble treinado (ex: RandomForestClassifier).
 
     Returns:
-    data: A dictionary containing the communities and class bounds extracted from the DPG model.
+    data: Dicionário contendo as comunidades e os limites das classes.
     """
-    # Set the random seed for reproducibility
     np.random.seed(42)
+    print("Calculando métricas...")
 
-    print("Calculating metrics...")
-    # Create a dictionary to map node labels to their identifiers
+    # Criar dicionário de nomes dos nós
     diz_nodes = {node[1] if "->" not in node[0] else None: node[0] for node in nodes_list}
-    # Remove any None keys from the dictionary
     diz_nodes = {k: v for k, v in diz_nodes.items() if k is not None}
-    # Create a reversed dictionary to map node identifiers to their labels
     diz_nodes_reversed = {v: k for k, v in diz_nodes.items()}
-    
-    # Extract asynchronous label propagation communities
+
+    # 🔹 Obter os nomes reais das classes diretamente do modelo
+    if hasattr(model, "classes_"):
+        class_names = list(model.classes_)  # Exemplo: ['Aprovado', 'Reprovado']
+    else:
+        class_names = []
+
+    # 🔹 Extração de comunidades no grafo
     asyn_lpa_communities = nx.community.asyn_lpa_communities(dpg_model, weight='weight')
     asyn_lpa_communities_stack = [{diz_nodes_reversed[str(node)] for node in community} for community in asyn_lpa_communities]
 
+    # 🔹 Encontrar predecessores das classes
     filtered_nodes = {k: v for k, v in diz_nodes.items() if 'Class' in k or 'Pred' in k}
-    # Initialize the predecessors dictionary
     predecessors = {k: [] for k in filtered_nodes}
-    # Find predecessors using more efficient NetworkX capabilities
     for key_1, value_1 in filtered_nodes.items():
-        # Using single-source shortest path to find all nodes with paths to value_1
-        # This function returns a dictionary of shortest paths to value_1
         try:
             preds = nx.single_source_shortest_path(dpg_model.reverse(), value_1)
             predecessors[key_1] = [k for k, v in diz_nodes.items() if v in preds and k != key_1]
         except nx.NetworkXNoPath:
             continue    
 
-    # Calculate the class boundaries
-    print("Calculating constraints...")
-    class_bounds = calculate_boundaries(predecessors)
+    print("Calculando limites das classes...")
+    class_bounds = calculate_boundaries(predecessors, class_names)  
 
-    # Create a data dictionary to store the extracted metrics
+    # Retorno dos dados
     data = {
         "Communities": asyn_lpa_communities_stack,
         "Class Bounds": class_bounds,
@@ -569,29 +600,38 @@ def get_dpg_metrics(dpg_model, nodes_list):
 
     return data
 
-def get_dpg_metrics_to_csv(dpg_model, nodes_list, community_file="examples/dpg_communities.csv", bounds_file="examples/dpg_class_bounds.csv"):
+
+def get_dpg_metrics_to_csv(dpg_model, nodes_list, model, community_file="examples/dpg_communities.csv", bounds_file="examples/dpg_class_bounds.csv"):
     """
-    Extracts metrics from a DPG and saves the results to separate CSV files for communities and class bounds.
+    Extrai métricas do DPG e salva os resultados em arquivos CSV para comunidades e limites das classes.
 
     Args:
-    dpg_model: A NetworkX graph representing the directed process graph.
-    nodes_list: A list of nodes where each node is a tuple. The first element is the node identifier and the second is the node label.
-    community_file: The name of the CSV file to save community data.
-    bounds_file: The name of the CSV file to save class bounds.
+    dpg_model: Grafo NetworkX representando o DPG.
+    nodes_list: Lista de nós contendo identificadores e descrições.
+    model: Modelo de ensemble treinado (ex: RandomForestClassifier).
+    community_file: Nome do arquivo CSV para salvar as comunidades.
+    bounds_file: Nome do arquivo CSV para salvar os limites das classes.
     """
-    # Set the random seed for reproducibility
     np.random.seed(42)
 
-    print("Calculating metrics...")
-    # Create a dictionary to map node labels to their identifiers
+    print("Calculando métricas...")
+
+    # Criar dicionário de nomes dos nós
     diz_nodes = {node[1] if "->" not in node[0] else None: node[0] for node in nodes_list}
     diz_nodes = {k: v for k, v in diz_nodes.items() if k is not None}
     diz_nodes_reversed = {v: k for k, v in diz_nodes.items()}
-    
-    # Extract asynchronous label propagation communities
+
+    # 🔹 Obter os nomes reais das classes diretamente do modelo
+    if hasattr(model, "classes_"):
+        class_names = list(model.classes_)  # Exemplo: ['Aprovado', 'Reprovado']
+    else:
+        class_names = []
+
+    # 🔹 Extração de comunidades no grafo
     asyn_lpa_communities = nx.community.asyn_lpa_communities(dpg_model, weight='weight')
     asyn_lpa_communities_stack = [{diz_nodes_reversed[str(node)] for node in community} for community in asyn_lpa_communities]
 
+    # 🔹 Encontrar predecessores das classes
     filtered_nodes = {k: v for k, v in diz_nodes.items() if 'Class' in k or 'Pred' in k}
     predecessors = {k: [] for k in filtered_nodes}
     for key_1, value_1 in filtered_nodes.items():
@@ -601,30 +641,31 @@ def get_dpg_metrics_to_csv(dpg_model, nodes_list, community_file="examples/dpg_c
         except nx.NetworkXNoPath:
             continue    
 
-    print("Calculating constraints...")
-    class_bounds = calculate_boundaries(predecessors)
+    print("Calculando limites das classes...")
+    class_bounds = calculate_boundaries(predecessors, class_names)  
 
-    # Save community data
+    # 🔹 Salvar dados das comunidades
     community_data = []
     for i, community in enumerate(asyn_lpa_communities_stack):
         for node in community:
             community_data.append([f"Community_{i+1}", node])
-    
+
     df_communities = pd.DataFrame(community_data, columns=["Community", "Node"])
     df_communities.to_csv(community_file, index=False)
     print(f"DPG communities saved to {community_file}")
-    
-    # Save class bounds data
+
+    # 🔹 Salvar limites das classes
     bounds_data = []
     for key, bounds in class_bounds.items():
         for constraint in bounds:
             bounds_data.append([key, constraint])
-    
+
     df_bounds = pd.DataFrame(bounds_data, columns=["Class", "Constraint"])
     df_bounds.to_csv(bounds_file, index=False)
     print(f"DPG class bounds saved to {bounds_file}")
-    
+
     return df_communities, df_bounds
+
 
 
 def get_dpg_node_metrics(dpg_model, nodes_list):

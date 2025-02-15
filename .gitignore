@@ -1,3 +1,7 @@
 .venv/*
 *.csv
 *.txt
+base_binaria.py
+examples/custom_l5_pv0.001_t2_dpg_metrics.txt
+examples/custom_l5_pv0.001_t2_stats.txt
+resultados_1/plot_name_Degree.png

@@ -92,9 +92,9 @@ def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_thr
     dot = get_dpg(X_train, features, model, perc_var, decimal_threshold, n_jobs=n_jobs)
     dpg_model, nodes_list = digraph_to_nx(dot)
 
-    df_dpg = get_dpg_metrics(dpg_model, nodes_list)
+    df_dpg = get_dpg_metrics(dpg_model, nodes_list, model)
     df = get_dpg_node_metrics(dpg_model, nodes_list)
-    get_dpg_metrics_to_csv(dpg_model, nodes_list)
+    get_dpg_metrics_to_csv(dpg_model, nodes_list, model) 
     if plot:
         plot_dpg("plot_name", dot, df, df_dpg, save_dir=save_plot_dir, attribute=attribute, communities=communities, class_flag=class_flag)
 
