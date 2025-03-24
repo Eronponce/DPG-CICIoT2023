@@ -5,8 +5,12 @@ import math
 import os
 import numpy as np
 
+from collections import defaultdict
+
 import graphviz
 import networkx as nx
+
+from tqdm import tqdm
 
 import hashlib
 from joblib import Parallel, delayed
@@ -86,161 +90,80 @@ def digraph_to_nx(graphviz_graph):
 
 
 def tracing_ensemble(case_id, sample, ensemble, feature_names, decimal_threshold=2):
-    '''
-    This function traces the decision paths taken by each decision tree in a random forest classifier for a given sample.
-    It records the path of decisions made by each tree, including the comparisons at each node and the resulting class.
+    """
+    Yields decision paths taken by each tree in an ensemble for a given sample.
+    Now uses iteration (not recursion) and yield (not list accumulation).
+    """
+    is_regressor = isinstance(ensemble, (RandomForestRegressor, ExtraTreesRegressor, AdaBoostRegressor))
 
-    Args:
-    case_id: An identifier for the sample being traced.
-    sample: The input sample for which the decision paths are traced.
-    rf_classifier: The random forest classifier containing the decision trees.
-    feature_names: The names of the features used in the decision trees.
-    decimal_threshold: The number of decimal places to which thresholds are rounded (default is 1).
-
-    Returns:
-    event_log: A list of the decision steps taken by each tree in the forest for the given sample.
-    '''    
-    event_log = []
-
-    def build_path(tree, node_index, path):
-        node = tree.tree_
-        is_leaf = node.children_left[node_index] == node.children_right[node_index]
-        feature_index = node.feature[node_index]
-        feature_name = feature_names[feature_index]
-        threshold = round(node.threshold[node_index], decimal_threshold)
-        sample_val = sample[feature_index]
-
-        if is_leaf:
-            path.append(f"Class {node.value[node_index].argmax()}")
-        else:
-            condition = f"{feature_name} <= {threshold}" if sample_val <= threshold else f"{feature_name} > {threshold}"
-            path.append(condition)
-            next_node = node.children_left[node_index] if sample_val <= threshold else node.children_right[node_index]
-            build_path(tree, next_node, path)
-
-    def build_path_reg(tree, node_index, path):
-        node = tree.tree_
-        if node.children_left[node_index] == node.children_right[node_index]:
-            path.append(f"Pred {np.round(node.value[node_index][0], 2)}")
-        else:
-            feature_index = node.feature[node_index]
-            feature_name = feature_names[feature_index]
-            threshold = round(node.threshold[node_index], decimal_threshold)
-            sample_val = sample[feature_index]
-            condition = f"{feature_name} <= {threshold}" if sample_val <= threshold else f"{feature_name} > {threshold}"
-            path.append(condition)
-            next_node = node.children_left[node_index] if sample_val <= threshold else node.children_right[node_index]
-            build_path_reg(tree, next_node, path)
-
-    tree_types = (RandomForestClassifier, ExtraTreesClassifier, AdaBoostClassifier, BaggingClassifier,
-                  AdaBoostRegressor, RandomForestRegressor, ExtraTreesRegressor)
-    if not isinstance(ensemble, tree_types):
+    if not isinstance(ensemble, (
+        RandomForestClassifier, ExtraTreesClassifier, AdaBoostClassifier, BaggingClassifier,
+        RandomForestRegressor, ExtraTreesRegressor, AdaBoostRegressor
+    )):
         raise Exception("Ensemble model not recognized!")
 
+    sample = sample.reshape(-1)  # Ensure it's 1D
+
     for i, tree in enumerate(ensemble.estimators_):
-        sample_path = []
-        if isinstance(ensemble, (AdaBoostRegressor, RandomForestRegressor, ExtraTreesRegressor)):
-            build_path_reg(tree, 0, sample_path)
-        else:
-            build_path(tree, 0, sample_path)
-        tree_events = [[f"sample{case_id}_dt{i}", step] for step in sample_path]
-        event_log.extend(tree_events)
+        tree_ = tree.tree_
+        node_index = 0
+        depth = 0
+        prefix = f"sample{case_id}_dt{i}"
 
-    return event_log
+        while True:
+            left = tree_.children_left[node_index]
+            right = tree_.children_right[node_index]
+            is_leaf = left == right
 
-def filter_log(log, perc_var, n_jobs=-1):
-    """
-    Filters a log based on the variant percentage. Variants (unique sequences of activities for cases) 
-    that occur less than the specified threshold are removed from the log.
+            if is_leaf:
+                if is_regressor:
+                    pred = round(tree_.value[node_index][0][0], 2)
+                    yield [prefix, f"Pred {pred}"]
+                else:
+                    pred_class = tree_.value[node_index].argmax()
+                    yield [prefix, f"Class {pred_class}"]
+                break
 
-    Args:
-    log: A pandas DataFrame containing the event log with columns 'case:concept:name' and 'concept:name'.
-    perc_var: A float representing the minimum percentage of total traces a variant must have to be kept.
-    n_jobs: Number of parallel jobs to use. Default is -1 (use all available CPUs).
+            feature_index = tree_.feature[node_index]
+            threshold = round(tree_.threshold[node_index], decimal_threshold)
+            feature_name = feature_names[feature_index]
+            sample_val = sample[feature_index]
 
-    Returns:
-    log: A filtered pandas DataFrame containing only the cases and activities that meet the variant percentage threshold.
-    """
-
-    def process_chunk(chunk):
-        # Filter the log DataFrame to only include cases from the current chunk
-        filtered_log = log[log['case:concept:name'].isin(chunk)]
-        grouped = filtered_log.groupby('case:concept:name')['concept:name'].agg('|'.join)
-        # Invert the series to a dictionary where keys are the concatenated 'concept:name' and values are lists of cases
-        chunk_variants = {}
-        for case, key in grouped.items():
-            if key in chunk_variants:
-                chunk_variants[key].append(case)
+            if sample_val <= threshold:
+                condition = f"{feature_name} <= {threshold}"
+                node_index = left
             else:
-                chunk_variants[key] = [case]
-        
-        return chunk_variants
+                condition = f"{feature_name} > {threshold}"
+                node_index = right
 
-    # Split the cases into chunks for parallel processing
-    cases = log["case:concept:name"].unique()
-    
-    # If n_jobs is -1, use all available CPUs, otherwise use the provided n_jobs
-    if n_jobs == -1:
-        n_jobs = os.cpu_count()  # Get the number of available CPU cores
-    
-    # Adjust n_jobs if there are fewer cases than n_jobs
-    n_jobs = min(n_jobs, len(cases))  # Ensure n_jobs is not larger than the number of cases
-    
-    # Calculate chunk size
-    chunk_size = len(cases) // n_jobs if len(cases) // n_jobs > 0 else 1  # Ensure chunk_size is at least 1
-    
-    # Split the cases into chunks
-    chunks = [cases[i:i + chunk_size] for i in range(0, len(cases), chunk_size)]
-    
-    # Process each chunk in parallel
-    results = Parallel(n_jobs=n_jobs)(delayed(process_chunk)(chunk) for chunk in chunks)
+            yield [prefix, condition]
+            depth += 1
 
-    # Combine results into a single dictionary
-    variants = {}
-    for result in results:
-        for key, value in result.items():
-            if key in variants:
-                variants[key].extend(value)
-            else:
-                variants[key] = value
+def filter_log(log, perc_var):
+    """
+    Low-memory version of variant filtering: avoids large intermediate structures.
+    """
+    from collections import defaultdict
 
-    # Get the total number of unique traces in the log
-    total_traces = log["case:concept:name"].nunique()
+    # Step 1: Generate variants with minimal memory
+    variant_map = defaultdict(list)  # variant -> list of cases
+    total_cases = 0
 
-    # Helper function to filter variants in parallel
-    def filter_variants(chunk):
-        local_cases, local_activities = [], []
-        for k, v in chunk.items():
-            if len(v) / total_traces >= perc_var:
-                for case in v:
-                    for act in k.split("|"):
-                        local_cases.append(case)
-                        local_activities.append(act)
-        return local_cases, local_activities
+    for case_id, group in log.groupby("case:concept:name", sort=False):
+        variant = "|".join(group["concept:name"].values)
+        variant_map[variant].append(case_id)
+        total_cases += 1
 
-    # Split the dictionary of variants into chunks for filtering
-    variant_items = list(variants.items())
-    
-    # Split variant_items into chunks
-    chunk_size = len(variant_items) // n_jobs if len(variant_items) // n_jobs > 0 else 1  # Ensure chunk_size is at least 1
-    chunks = [variant_items[i:i + chunk_size] for i in range(0, len(variant_items), chunk_size)]
-    
-    # Process filtering in parallel
-    results = Parallel(n_jobs=n_jobs)(delayed(filter_variants)(dict(chunk)) for chunk in chunks)
+    # Step 2: Filter variants by frequency
+    case_ids_to_keep = set()
+    min_count = total_cases * perc_var
 
-    # Combine results into lists of cases and activities
-    cases, activities = [], []
-    for local_cases, local_activities in results:
-        cases.extend(local_cases)
-        activities.extend(local_activities)
+    for variant, case_ids in variant_map.items():
+        if len(case_ids) >= min_count:
+            case_ids_to_keep.update(case_ids)
 
-    # Ensure both lists are of the same length before creating DataFrame
-    assert len(cases) == len(activities), f"Length mismatch: {len(cases)} cases vs {len(activities)} activities"
-
-    # Create a new DataFrame from the filtered cases and activities
-    filtered_log = pd.DataFrame(zip(cases, activities), columns=["case:concept:name", "concept:name"])
-
-    return filtered_log
+    # Step 3: Filter original log with selected case IDs
+    return log[log["case:concept:name"].isin(case_ids_to_keep)].copy()
 
 def discover_dfg(log, n_jobs=1):
     """
@@ -255,22 +178,21 @@ def discover_dfg(log, n_jobs=1):
     dfg: A dictionary where keys are tuples representing transitions between activities and values are the counts of those transitions.
     """
 
-    # Helper function to process a chunk of cases
-    def process_chunk(chunk):
-            chunk_dfg = {}
-            for case in chunk:
-                # Extract the trace (sequence of activities) for the current case
-                trace_df = log[log["case:concept:name"] == case].copy()
-                trace_df.sort_values(by="case:concept:name", inplace=True)
+    # Pre-group log by case ID (only once!)
+    grouped_log = dict(tuple(log.groupby("case:concept:name", sort=False)))
 
-                # Iterate through the trace to capture transitions between consecutive activities
-                for i in range(len(trace_df) - 1):
-                    key = (trace_df.iloc[i, 1], trace_df.iloc[i + 1, 1])  # Transition
-                    if key in chunk_dfg:
-                        chunk_dfg[key] += 1  # Increment count if transition exists
-                    else:
-                        chunk_dfg[key] = 1  # Initialize count if transition is new
-            return chunk_dfg
+    def process_chunk(chunk):
+        chunk_dfg = defaultdict(int)
+
+        for case in chunk:
+            trace_df = grouped_log[case]
+
+            # Count transitions
+            for a, b in zip(trace_df["concept:name"][:-1], trace_df["concept:name"][1:]):
+                chunk_dfg[(a, b)] += 1
+
+        return dict(chunk_dfg)  # Convert back to normal dict for serialization
+
 
      
 
@@ -295,7 +217,9 @@ def discover_dfg(log, n_jobs=1):
 
     # Process each chunk in parallel
     print("Traversing...")
-    results = Parallel(n_jobs=n_jobs)(delayed(process_chunk)(chunk) for chunk in chunks)
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process_chunk)(chunk) for chunk in tqdm(chunks, desc="Chunks")
+    )
 
     # Merge all chunk DFGs into a single DFG dictionary
     print("Aggregating...")
@@ -740,11 +664,11 @@ def get_dpg(X_train, feature_names, model, perc_var, decimal_threshold, n_jobs=-
 
     def process_sample(i, sample):
         """Process a single sample."""
-        return tracing_ensemble(i, sample, model, feature_names, decimal_threshold)
+        return list(tracing_ensemble(i, sample, model, feature_names, decimal_threshold))
 
     print('Tracing ensemble...')
     log = Parallel(n_jobs=n_jobs)(
-        delayed(process_sample)(i, sample) for i, sample in enumerate(X_train)
+        delayed(process_sample)(i, sample) for i, sample in tqdm(list(enumerate(X_train)), total=len(X_train))
     )
 
     # Flatten the list of lists
