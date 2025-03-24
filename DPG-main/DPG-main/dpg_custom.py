@@ -1,6 +1,8 @@
 import os
 import argparse
 import dpg.sklearn_custom_dpg as test
+import pandas as pd
+import numpy as np
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -19,7 +21,8 @@ if __name__ == "__main__":
     parser.add_argument("--n_jobs", type=int, default=-1, help="Number of jobs to run in parallel")
     parser.add_argument("--perc_dataset", type=float, default=1.0, help="Percentage of the dataset to be used")
     parser.add_argument("--importance", action='store_true', help="Calculate feature importance (Random Forest & LCR)")
-    
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for dataset sampling")
+
     args = parser.parse_args()
 
     df, df_dpg_metrics, df_rf_importance = test.test_base_sklearn(
@@ -37,7 +40,8 @@ if __name__ == "__main__":
         class_flag=args.class_flag,
         n_jobs=args.n_jobs,
         perc_dataset=args.perc_dataset,
-        importance=args.importance
+        importance=args.importance,
+        random_seed=args.seed  # Passando o seed para garantir reprodutibilidade
     )
 
     df.to_csv(os.path.join(args.dir, f'custom_l{args.l}_pv{args.pv}_t{args.t}_node_metrics.csv'), encoding='utf-8')
@@ -46,7 +50,5 @@ if __name__ == "__main__":
         for key, value in df_dpg_metrics.items():
             f.write(f"{key}: {value}\n")
 
-    # Salvar importância das features
     if args.importance:
         df_rf_importance.to_csv(os.path.join(args.dir, f'custom_l{args.l}_importance_rf.csv'), encoding='utf-8', index=False)
-     
