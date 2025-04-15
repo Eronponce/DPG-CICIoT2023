@@ -22,26 +22,34 @@ if __name__ == "__main__":
     parser.add_argument("--perc_dataset", type=float, default=1.0, help="Percentage of the dataset to be used")
     parser.add_argument("--importance", action='store_true', help="Calculate feature importance (Random Forest & LCR)")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for dataset sampling")
+    parser.add_argument("--use_model", type=str, default=None, help="Caminho para um modelo já treinado (joblib)")
+    parser.add_argument("--n_estimators", type=int, default=100)
+    parser.add_argument("--max_depth", type=int, default=None)
+    parser.add_argument("--min_samples_split", type=int, default=2)
+    parser.add_argument("--min_samples_leaf", type=int, default=1)
 
     args = parser.parse_args()
-
-    df, df_dpg_metrics, df_rf_importance = test.test_base_sklearn(
-        datasets=args.ds,
-        target_column=args.target_column,
-        n_learners=args.l, 
-        perc_var=args.pv, 
-        decimal_threshold=args.t,
-        model_name=args.model_name,
-        file_name=os.path.join(args.dir, f'custom_l{args.l}_pv{args.pv}_t{args.t}_stats.txt'), 
-        plot=args.plot, 
-        save_plot_dir=args.save_plot_dir, 
-        attribute=args.attribute, 
-        communities=args.communities, 
-        class_flag=args.class_flag,
-        n_jobs=args.n_jobs,
-        perc_dataset=args.perc_dataset,
-        importance=args.importance,
-        random_seed=args.seed  # Passando o seed para garantir reprodutibilidade
+    df, df_dpg_metrics, df_rf_importance, accuracy = test.test_base_sklearn(
+    datasets=args.ds,
+    target_column=args.target_column,
+    n_learners=args.l, 
+    perc_var=args.pv, 
+    decimal_threshold=args.t,
+    model_name=args.model_name,
+    file_name=os.path.join(args.dir, f'custom_l{args.l}_pv{args.pv}_t{args.t}_stats.txt'), 
+    plot=args.plot, 
+    save_plot_dir=args.save_plot_dir, 
+    attribute=args.attribute, 
+    communities=args.communities, 
+    class_flag=args.class_flag,
+    n_jobs=args.n_jobs,
+    perc_dataset=args.perc_dataset,
+    importance=args.importance,
+    random_seed=args.seed,
+    n_estimators=args.n_estimators,
+    max_depth=args.max_depth,
+    min_samples_split=args.min_samples_split,
+    min_samples_leaf=args.min_samples_leaf
     )
 
     df.to_csv(os.path.join(args.dir, f'custom_l{args.l}_pv{args.pv}_t{args.t}_node_metrics.csv'), encoding='utf-8')
@@ -52,3 +60,8 @@ if __name__ == "__main__":
 
     if args.importance:
         df_rf_importance.to_csv(os.path.join(args.dir, f'custom_l{args.l}_importance_rf.csv'), encoding='utf-8', index=False)
+
+    # Salvar a acurácia em um arquivo separado
+    accuracy_file_path = os.path.join(args.dir, f'custom_l{args.l}_pv{args.pv}_t{args.t}_accuracy.txt')
+    with open(accuracy_file_path, 'w') as f:
+        f.write(f"Accuracy: {accuracy}\n")  # Salvar a acurácia no arquivo

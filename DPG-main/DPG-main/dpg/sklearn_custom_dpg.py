@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, AdaBo
 from sklearn.model_selection import train_test_split
 from .core import digraph_to_nx, get_dpg, get_dpg_node_metrics, get_dpg_metrics, get_dpg_metrics_to_csv
 from .visualizer import plot_dpg
+from sklearn.metrics import accuracy_score  # Adicionei a importação do accuracy_score
 
 def select_custom_dataset(path, target_column, perc_dataset=1.0, random_seed=None):
     """
@@ -35,7 +36,8 @@ def select_custom_dataset(path, target_column, perc_dataset=1.0, random_seed=Non
 
 def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_threshold, model_name='RandomForestClassifier',
                       file_name=None, plot=False, save_plot_dir="examples/", attribute=None, communities=False, 
-                      class_flag=False, n_jobs=-1, perc_dataset=1.0, importance=False, random_seed=None):
+                      class_flag=False, n_jobs=-1, perc_dataset=1.0, importance=False, random_seed=None, n_estimators=100, max_depth=None, 
+                      min_samples_split=2, min_samples_leaf=1): 
     
     if file_name:
         output_dir = os.path.dirname(file_name)
@@ -53,7 +55,17 @@ def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_thr
     
     # Escolher o modelo com base no argumento passado
     if model_name == 'RandomForestClassifier':
-        model = RandomForestClassifier(n_estimators=n_learners, random_state=random_seed)
+        model = RandomForestClassifier(
+            n_estimators=n_learners,  # usado como fallback, mas será sobrescrito logo abaixo
+            random_state=random_seed
+        )
+        # Sobrescreve com os hiperparâmetros passados
+        model.set_params(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            min_samples_split=min_samples_split,
+            min_samples_leaf=min_samples_leaf
+        )
     elif model_name == 'ExtraTreesClassifier':
         model = ExtraTreesClassifier(n_estimators=n_learners, random_state=random_seed)
     elif model_name == 'AdaBoostClassifier':
@@ -64,7 +76,8 @@ def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_thr
         raise Exception("The selected model is not currently available.")
             
     model.fit(X_train, y_train)
-    
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)  # Calculando a acurácia
     df_rf_importance = None
     if importance and hasattr(model, "feature_importances_"):
         df_rf_importance = pd.DataFrame({"Feature": features, "Importance": model.feature_importances_})
@@ -80,4 +93,4 @@ def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_thr
     if plot:
         plot_dpg("plot_name", dot, df, df_dpg, save_dir=save_plot_dir, attribute=attribute, communities=communities, class_flag=class_flag)
 
-    return df, df_dpg, df_rf_importance
+    return df, df_dpg, df_rf_importance, accuracy  # Retornando a acurácia também
