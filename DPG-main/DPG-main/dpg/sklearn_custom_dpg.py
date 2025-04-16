@@ -36,7 +36,7 @@ def select_custom_dataset(path, target_column, perc_dataset=1.0, random_seed=Non
 
 def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_threshold, model_name='RandomForestClassifier',
                       file_name=None, plot=False, save_plot_dir="examples/", attribute=None, communities=False, 
-                      class_flag=False, n_jobs=-1, perc_dataset=1.0, importance=False, random_seed=None, n_estimators=100, max_depth=None, 
+                      class_flag=False, n_jobs=-1, perc_dataset=1.0, importance=False, random_seed=42, n_estimators=20, max_depth=None, 
                       min_samples_split=2, min_samples_leaf=1): 
     
     if file_name:
