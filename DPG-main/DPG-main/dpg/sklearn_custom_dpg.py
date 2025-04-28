@@ -36,8 +36,8 @@ def select_custom_dataset(path, target_column, perc_dataset=1.0, random_seed=Non
 
 def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_threshold, model_name='RandomForestClassifier',
                       file_name=None, plot=False, save_plot_dir="examples/", attribute=None, communities=False, 
-                      class_flag=False, n_jobs=-1, perc_dataset=1.0, importance=False, random_seed=42, n_estimators=20, max_depth=None, 
-                      min_samples_split=2, min_samples_leaf=1): 
+                      class_flag=False, n_jobs=-1, perc_dataset=1.0, importance=False, random_seed=42, n_estimators=100, max_depth=None, 
+                      min_samples_split=2, min_samples_leaf=1,balanced=False): 
     
     if file_name:
         output_dir = os.path.dirname(file_name)
@@ -57,7 +57,8 @@ def test_base_sklearn(datasets, target_column, n_learners, perc_var, decimal_thr
     if model_name == 'RandomForestClassifier':
         model = RandomForestClassifier(
             n_estimators=n_learners,  # usado como fallback, mas será sobrescrito logo abaixo
-            random_state=random_seed
+            random_state=random_seed,
+            class_weight='balanced' if balanced else None
         )
         # Sobrescreve com os hiperparâmetros passados
         model.set_params(

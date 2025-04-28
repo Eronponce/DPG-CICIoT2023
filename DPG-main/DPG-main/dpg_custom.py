@@ -27,6 +27,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_depth", type=int, default=None)
     parser.add_argument("--min_samples_split", type=int, default=2)
     parser.add_argument("--min_samples_leaf", type=int, default=1)
+    parser.add_argument("--balanced", action='store_true', help="Se definido, usa class_weight='balanced' no Random Forest")
 
     args = parser.parse_args()
     df, df_dpg_metrics, df_rf_importance, accuracy = test.test_base_sklearn(
@@ -49,7 +50,8 @@ if __name__ == "__main__":
     n_estimators=args.n_estimators,
     max_depth=args.max_depth,
     min_samples_split=args.min_samples_split,
-    min_samples_leaf=args.min_samples_leaf
+    min_samples_leaf=args.min_samples_leaf,
+    balanced=args.balanced
     )
 
     df.to_csv(os.path.join(args.dir, f'custom_l{args.l}_pv{args.pv}_t{args.t}_node_metrics.csv'), encoding='utf-8')

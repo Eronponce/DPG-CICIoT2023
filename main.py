@@ -4,25 +4,28 @@ import os
 import pandas as pd
 
 # Caminhos
-dataset_path = "Merged01_6label_no_web_brute.csv"
+dataset_path = "dataset_balanceado_label.csv"
 examples_dir = "examples"
 
 # Parâmetros para execução com modelo treinado e hiperparâmetros manuais
 params = {
     "--ds": dataset_path,
-    "--target_column": "Main_Label",
-    "--pv": "0.01",
+    "--target_column": "label",
+    "--pv": "0.001",
     "--t": "2",
     "--save_plot_dir": examples_dir,
-    "--attribute": "None",
+    "--attribute": "class",
     "--n_jobs": "1",
     "--perc_dataset": "1",
     "--model_name": "RandomForestClassifier",
-    "--n_estimators": "78",
+    "--n_estimators": "20",
     "--max_depth": "16",
     "--min_samples_split": "2",
     "--min_samples_leaf": "2",
     "--importance": "",
+    "--plot": "",
+    "--balanced": "",
+    
 
 
 }
